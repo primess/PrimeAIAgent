@@ -72,15 +72,15 @@ async def index_page():
     return {"message": "Pizza Ordering AI Agent is running!"}
 
 @app.get("/order", response_class=JSONResponse)
-async def handle_order(request: Request, pizza_type: str, phone_number: str):
-    """Initiates an outbound call to place a pizza order."""
+async def handle_order(request: Request, instructions: str, phone_number: str):
+    """Initiates an outbound call with the provided instructions."""
     logging.info(f"Received phone_number parameter: '{phone_number}'") # Log raw phone number
-    logging.info(f"Received order request: Pizza='{pizza_type}', Phone='{phone_number}'")
+    logging.info(f"Received order request: Instructions='{instructions[:100]}...', Phone='{phone_number}'") # Log truncated instructions
 
     # --- Input Validation ---
-    if not pizza_type:
-        logging.error("Validation failed: pizza_type is empty.")
-        raise HTTPException(status_code=400, detail="pizza_type parameter cannot be empty.")
+    if not instructions:
+        logging.error("Validation failed: instructions parameter is empty.")
+        raise HTTPException(status_code=400, detail="instructions parameter cannot be empty.")
 
     # Phone number validation: full international or local number
     twilio_phone_number = os.getenv('TWILIO_PHONE_NUMBER', '')
@@ -108,10 +108,10 @@ async def handle_order(request: Request, pizza_type: str, phone_number: str):
         logging.info("VoiceResponse object created.")
         connect = Connect()
         stream = Stream(url=ws_url)
-        stream.parameter(name="pizza_type", value=pizza_type)
+        stream.parameter(name="instructions", value=instructions) # Pass instructions parameter
         connect.append(stream)
         response.append(connect)
-        logging.info("Appended <Connect><Stream> to VoiceResponse.")
+        logging.info("Appended <Connect><Stream> with instructions parameter to VoiceResponse.")
         # Add a fallback message if the stream fails
         response.say("Sorry, I couldn't connect to the ordering service.")
         logging.info("Appended fallback <Say> to VoiceResponse.")
@@ -164,10 +164,10 @@ async def handle_media_stream(websocket: WebSocket):
                 openai_ws = oai_ws # Assign the connected WebSocket
                 logging.info(f"OPENAI_CONNECT_SUCCESS: Successfully connected to OpenAI. State: {openai_ws.state}") # Added diagnostic log (replaces previous)
                 stream_sid: Optional[str] = None
-                pizza_type_for_call: Optional[str] = None # Store pizza type for this specific call
+                instructions_for_call: Optional[str] = None # Store instructions for this specific call
 
                 async def receive_from_twilio():
-                    nonlocal stream_sid, pizza_type_for_call # Moved here
+                    nonlocal stream_sid, instructions_for_call # Allow modification
                     logging.info(f"Entered receive_from_twilio task (SID={stream_sid})") # Added task entry log
                     """Receive messages from Twilio, handle events, forward audio."""
                     try:
@@ -184,20 +184,20 @@ async def handle_media_stream(websocket: WebSocket):
                                 if data['event'] == 'start':
                                     stream_sid = data['start']['streamSid']
                                     # Extract pizza_type from parameters passed in TwiML
-                                    # Extract pizza_type from parameters passed in TwiML via WebSocket URI query params
+                                    # Extract instructions from parameters passed in TwiML via WebSocket URI query params
                                     logging.info(f"DEBUG: Full start event data: {data['start']}")
-                                    # Extract pizza_type from custom parameters passed in TwiML
-                                    pizza_type_for_call = data['start']['customParameters'].get('pizza_type', 'a pizza') # Default if not found
+                                    # Extract instructions from custom parameters passed in TwiML
+                                    instructions_for_call = data['start']['customParameters'].get('instructions', 'Please describe your task.') # Default if not found
                                     # Log expected audio format based on Twilio start event if available
                                     media_format = data['start'].get('mediaFormat', {})
                                     encoding = media_format.get('encoding', 'N/A')
                                     sample_rate = media_format.get('sampleRate', 'N/A')
                                     channels = media_format.get('channels', 'N/A')
-                                    logging.info(f"Twilio stream started: SID={stream_sid}, Pizza='{pizza_type_for_call}', MediaFormat: encoding={encoding}, sampleRate={sample_rate}, channels={channels}")
+                                    logging.info(f"Twilio stream started: SID={stream_sid}, Instructions='{instructions_for_call[:50]}...', MediaFormat: encoding={encoding}, sampleRate={sample_rate}, channels={channels}") # Log truncated instructions
                                     logging.info(f"TWILIO_START_RECEIVED: Received start event. Data: {json.dumps(data['start'])}") # Added diagnostic log
                                     logging.info(f"OpenAI session configured for input: g711_ulaw, output: g711_ulaw")
-                                    # Now that we have the pizza type, configure the OpenAI session
-                                    await send_session_update(openai_ws, pizza_type_for_call)
+                                    # Now that we have the instructions, configure the OpenAI session
+                                    await send_session_update(openai_ws, instructions_for_call)
 
                                 elif data['event'] == 'media':
                                     # Log received audio format (though Twilio usually only sends payload here)
@@ -385,17 +385,9 @@ async def handle_media_stream(websocket: WebSocket):
         # Final log indicating the handler for this specific Twilio connection is ending
         logging.info(f"Session handler for Twilio client {websocket.client.host}:{websocket.client.port} finished.")
 
-async def send_session_update(openai_ws, pizza_type: str):
-    """Send session update to OpenAI WebSocket with dynamic instructions."""
-    # Construct the dynamic instructions based on the pizza type
-    instructions = (
-        f"You are an AI assistant calling a pizzeria to place an order. "
-        f"Your goal is to order one '{pizza_type}' pizza. "
-        f"Pizza is for Ohad Primes who lives at Shani 4 Street, Tel Aviv. Phone number is +972-54-1234567. "
-        f"He will pay in cash when pizza is delivered. "
-        f"Be polite and clear. Ask for confirmation of the order and an estimated delivery time if possible. "
-        f"End the call politely once the order seems confirmed or if you cannot proceed. "
-    )
+async def send_session_update(openai_ws, instructions: str):
+    """Send session update to OpenAI WebSocket with provided instructions."""
+    # Instructions are now passed directly as an argument
 
     session_update = {
         "type": "session.update",
