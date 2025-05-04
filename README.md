@@ -1,6 +1,6 @@
-# [Your Project Title Here]
+# AI Personal Assistant Agent
 
-[Add a brief, clear description of your project here. Explain what it does and the problem it solves.]
+AI Personal Assistant Agent that can receive tasks and execute them including making phone calls on your behalf. Utilizes Twilio and OpenAI Realtime API, streaming and speech capablities
 
 This guide provides step-by-step instructions to set up and run this project locally. It utilizes Python, Twilio for communication, OpenAI for AI capabilities, and ngrok to expose the local development server to the internet for webhook integration.
 
