@@ -8,27 +8,39 @@ API_URL = "http://localhost:8000/chat"
 def initialize_session_state():
     """Initializes session state variables if they don't exist."""
     if "messages" not in st.session_state:
-        st.session_state.messages = []
+        st.session_state.messages = [] # Stores messages for display {role: "user/assistant", content: "..."}
+    if "agent_state" not in st.session_state:
+        # Stores the state received from the backend (history, gathered_details, etc.)
+        st.session_state.agent_state = {
+            "conversation_history": [],
+            "task_description": None,
+            "required_details": [],
+            "gathered_details": {},
+            "missing_details": [],
+        }
 
 def display_history():
     """Displays the chat history stored in session state."""
-    for message in st.session_state.messages:
+    # Display messages based on the potentially updated history from agent_state
+    for message in st.session_state.get("messages", []):
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
 def handle_input(prompt):
-    """Handles user input, sends it to the API, and displays the response."""
+    """Handles user input, sends it with state to the API, updates state, and displays the response."""
     if not prompt: # Ignore empty input
         return
 
-    # Add user message to chat history
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    # Display user message in chat message container
+    # Display user message immediately (optimistic update)
+    # The full history will be updated based on the backend response later
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Prepare the JSON payload for the API
-    payload = {"message": prompt}
+    # Prepare the JSON payload for the API, including the current state
+    payload = {
+        "message": prompt,
+        "initial_state": st.session_state.agent_state # Send the last known state
+    }
 
     # Send message to the orchestration engine and display response
     try:
@@ -37,28 +49,40 @@ def handle_input(prompt):
 
         try:
             api_response_json = response.json()
-            if "response" in api_response_json:
-                assistant_response = api_response_json["response"]
-                # Add assistant response to chat history
-                st.session_state.messages.append({"role": "assistant", "content": assistant_response})
-                # Display assistant response in chat message container
-                with st.chat_message("assistant"):
-                    st.markdown(assistant_response)
+            if "response" in api_response_json and "state" in api_response_json:
+                assistant_response_content = api_response_json["response"]
+                new_agent_state = api_response_json["state"]
+
+                # Update the agent state in session state
+                st.session_state.agent_state = new_agent_state
+
+                # Update the display messages based on the history from the backend state
+                st.session_state.messages = st.session_state.agent_state.get("conversation_history", [])
+
+                # Rerun to refresh the display with the updated history
+                st.rerun()
+
             else:
-                error_msg = "Error: 'response' key not found in API response."
+                error_msg = "Error: 'response' or 'state' key not found in API response."
                 st.error(error_msg)
+                # Add a simple error message to display history if state update fails
+                st.session_state.messages.append({"role": "user", "content": prompt}) # Keep user msg
                 st.session_state.messages.append({"role": "assistant", "content": "Error: Invalid response format from server."})
+
 
         except json.JSONDecodeError:
             error_msg = "Error: Could not decode JSON response from the server."
             st.error(error_msg)
+            st.session_state.messages.append({"role": "user", "content": prompt}) # Keep user msg
             st.session_state.messages.append({"role": "assistant", "content": "Error: Received non-JSON response from server."})
+
 
     except requests.exceptions.RequestException as e:
         error_message = f"Error connecting to the Pizza Agent engine: {e}"
         st.error(error_message)
-        # Add error message to chat history to indicate failure
+        st.session_state.messages.append({"role": "user", "content": prompt}) # Keep user msg
         st.session_state.messages.append({"role": "assistant", "content": f"Failed to get response: {e}"})
+
 
 def main():
     """Main function to run the Streamlit app."""
