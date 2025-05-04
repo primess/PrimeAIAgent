@@ -346,12 +346,12 @@ async def handle_media_stream(websocket: WebSocket):
                         logging.info(f"Exiting send_to_twilio loop (SID={stream_sid}). Cleaning up Twilio connection.")
                         # Ensure Twilio connection is closed if OpenAI disconnects or loop exits
                         if ws.client_state == WebSocketState.CONNECTED:
-                             logging.info(f"Closing Twilio WebSocket (SID={stream_sid}) from send_to_twilio finally block.")
-                             try:
-                                 await ws.close(code=1000, reason="OpenAI stream ended or error")
-                                 logging.info(f"Twilio WebSocket closed gracefully (SID={stream_sid}). State: {ws.client_state}")
-                             except Exception as close_err:
-                                 logging.error(f"Error closing Twilio WebSocket (SID={stream_sid}): {close_err}", exc_info=True)
+                            logging.info(f"Closing Twilio WebSocket (SID={stream_sid}) from send_to_twilio finally block.")
+                            try:
+                                await ws.close(code=1000, reason="OpenAI stream ended or error")
+                                logging.info(f"Twilio WebSocket closed gracefully (SID={stream_sid}). State: {ws.client_state}")
+                            except Exception as close_err:
+                                logging.error(f"Error closing Twilio WebSocket (SID={stream_sid}): {close_err}", exc_info=True)
                         else:
                             logging.info(f"Twilio WebSocket already closed or not connected (State: {ws.client_state}) in send_to_twilio finally block.")
 
@@ -361,12 +361,12 @@ async def handle_media_stream(websocket: WebSocket):
                 await asyncio.gather(receive_from_twilio(), send_to_twilio())
 
         except ConnectionClosedError as e:
-             logging.error(f"OPENAI_CONNECT_FAILURE: Initial connection to OpenAI WebSocket failed.") # Added diagnostic log
-             logging.error(f"Failed to connect to OpenAI WebSocket: {e}", exc_info=True)
-             # Close the Twilio connection if we couldn't connect to OpenAI initially
-             if websocket.client_state == WebSocketState.CONNECTED:
-                 logging.info("Closing Twilio WebSocket because initial OpenAI connection failed.")
-                 await websocket.close(code=1011, reason="Failed to connect to backend AI service")
+            logging.error(f"OPENAI_CONNECT_FAILURE: Initial connection to OpenAI WebSocket failed.") # Added diagnostic log
+            logging.error(f"Failed to connect to OpenAI WebSocket: {e}", exc_info=True)
+            # Close the Twilio connection if we couldn't connect to OpenAI initially
+            if websocket.client_state == WebSocketState.CONNECTED:
+                logging.info("Closing Twilio WebSocket because initial OpenAI connection failed.")
+                await websocket.close(code=1011, reason="Failed to connect to backend AI service")
         except Exception as e:
             logging.error(f"Unhandled error in session_handler main try block: {e}", exc_info=True)
             # Ensure cleanup in case of unexpected errors before or during gather
