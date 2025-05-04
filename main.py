@@ -305,14 +305,18 @@ async def handle_media_stream(websocket: WebSocket):
                             # Handle response.done event specifically
                             elif response['type'] == 'response.done':
                                 status = response.get('response', {}).get('status', 'unknown')
-                                reason = response.get('response', {}).get('status_details', {}).get('reason', 'unknown')
+                                # Debug log added here (correctly indented)
+                                logging.debug(f"DEBUG: status_details value: {response.get('response', {}).get('status_details')}")
+                                # Check if status_details is None before trying to access 'reason'
+                                status_details = response.get('response', {}).get('status_details')
+                                reason = status_details.get('reason', 'unknown') if isinstance(status_details, dict) else 'unknown' # Safely get reason
                                 logging.info(f"[OpenAI Response Done] SID: {stream_sid}, Status: {status}, Reason: {reason}, Details: {json.dumps(response)}") # Log full details
                                 if reason == 'turn_detected':
                                     logging.warning(f"OpenAI detected turn (SID={stream_sid}). AI response was cancelled. Continuing to listen.")
                                 elif status == 'completed':
                                     logging.info(f"OpenAI response completed normally (SID={stream_sid}). Continuing to listen.")
                                 else:
-                                     logging.warning(f"OpenAI response done with unhandled status/reason (SID={stream_sid}): Status={status}, Reason={reason}")
+                                    logging.warning(f"OpenAI response done with unhandled status/reason (SID={stream_sid}): Status={status}, Reason={reason}")
                                 # Continue listening in all 'response.done' cases for now
 
                             # Handle other OpenAI events if needed (e.g., text delta for logging)
