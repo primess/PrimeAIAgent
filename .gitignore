@@ -50,6 +50,7 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
+cover/
 
 # Translations
 *.mo
@@ -72,6 +73,7 @@ instance/
 docs/_build/
 
 # PyBuilder
+.pybuilder/
 target/
 
 # Jupyter Notebook
@@ -91,6 +93,11 @@ ipython_config.py
 # PEP 582; used by PDM, Flit and potentially other packaging tools.
 __pypackages__/
 
+# PDM
+# https://pdm.fming.dev/latest/usage/project/#working-with-version-control
+.pdm.toml
+.pdm-python
+.pdm-build/
 # Celery stuff
 celerybeat-schedule
 celerybeat.pid
@@ -133,12 +140,14 @@ cython_debug/
 
 # VS Code settings
 .vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/extensions.json
+# !.vscode/settings.json # Keep settings untracked
+# !.vscode/tasks.json # Keep tasks untracked
+# !.vscode/extensions.json # Keep extensions untracked
 *.code-workspace
 
 # Ruff cache
 .ruff_cache/
 # Roo folder
 .roo/
+# PyPI configuration file
+.pypirc
