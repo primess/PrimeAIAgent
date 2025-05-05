@@ -160,7 +160,7 @@ class TestChatUI(unittest.TestCase):
         # 3. Check Streamlit display calls
         mock_st.chat_message.assert_called_once_with("user")
         mock_st.markdown.assert_called_once_with(user_input)
-        mock_st.error.assert_called_once_with(f"Error connecting to the AI Assistant engine: {error_msg}")
+        mock_st.error.assert_called_once_with(f"Error connecting to the AI Assistant Agent engine: {error_msg}")
 
 
     @patch('ui.requests.post')
@@ -198,7 +198,7 @@ class TestChatUI(unittest.TestCase):
         # 3. Check Streamlit display calls
         mock_st.chat_message.assert_called_once_with("user")
         mock_st.markdown.assert_called_once_with(user_input)
-        mock_st.error.assert_called_once_with(f"Error connecting to the AI Assistant engine: {http_error}")
+        mock_st.error.assert_called_once_with(f"Error connecting to the AI Assistant Agent engine: {http_error}")
 
 
     @patch('ui.requests.post')

@@ -7,7 +7,7 @@
             "request": "launch",
             "module": "uvicorn",
             "args": [
-                "orchestrator.main:app",
+                "backend.web.app:app", // Updated path after refactoring
                 "--host", "0.0.0.0",
                 "--port", "8000",
                 "--reload" // Added reload for easier development
@@ -26,7 +26,7 @@
             "module": "streamlit",
             "args": [
                 "run",
-                "ui.py"
+                "frontend/ui.py" // Updated path after refactoring
             ],
             "jinja": true,
             "console": "integratedTerminal",
