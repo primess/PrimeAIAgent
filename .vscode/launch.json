@@ -1,0 +1,52 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run Backend (Uvicorn)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": [
+                "backend.web.app:app", // Updated path after refactoring
+                "--host", "0.0.0.0",
+                "--port", "8000",
+                "--reload" // Added reload for easier development
+            ],
+            "jinja": true,
+            "console": "integratedTerminal",
+            "env": {
+                // Ensure environment variables like OPENAI_API_KEY are loaded if needed
+                // "PYTHONPATH": "${workspaceFolder}" // Uncomment if imports fail
+            }
+        },
+        {
+            "name": "Run Frontend (Streamlit)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "streamlit",
+            "args": [
+                "run",
+                "frontend/ui.py" // Updated path after refactoring
+            ],
+            "jinja": true,
+            "console": "integratedTerminal",
+            "env": {
+                // "PYTHONPATH": "${workspaceFolder}" // Uncomment if imports fail
+            }
+        },
+        {
+            "name": "Python Debugger: Current File", // Kept the original for flexibility
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal"
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Run Backend and Frontend",
+            "configurations": ["Run Backend (Uvicorn)", "Run Frontend (Streamlit)"],
+            "stopAll": true // Stop both if one stops
+        }
+    ]
+}
