@@ -69,7 +69,7 @@ def get_websocket_url(request: Request) -> str:
 @app.get("/", response_class=JSONResponse)
 async def index_page():
     """Basic status endpoint."""
-    return {"message": "Pizza Ordering AI Agent is running!"}
+    return {"message": "AI Assistant Agent is running!"}
 
 @app.get("/order", response_class=JSONResponse)
 async def handle_order(request: Request, instructions: str, phone_number: str):
@@ -183,7 +183,6 @@ async def handle_media_stream(websocket: WebSocket):
 
                                 if data['event'] == 'start':
                                     stream_sid = data['start']['streamSid']
-                                    # Extract pizza_type from parameters passed in TwiML
                                     # Extract instructions from parameters passed in TwiML via WebSocket URI query params
                                     logging.info(f"DEBUG: Full start event data: {data['start']}")
                                     # Extract instructions from custom parameters passed in TwiML

@@ -78,7 +78,7 @@ def handle_input(prompt):
 
 
     except requests.exceptions.RequestException as e:
-        error_message = f"Error connecting to the Pizza Agent engine: {e}"
+        error_message = f"Error connecting to the AI Assistant Agent engine: {e}"
         st.error(error_message)
         st.session_state.messages.append({"role": "user", "content": prompt}) # Keep user msg
         st.session_state.messages.append({"role": "assistant", "content": f"Failed to get response: {e}"})
@@ -86,7 +86,7 @@ def handle_input(prompt):
 
 def main():
     """Main function to run the Streamlit app."""
-    st.title("🍕 Pizza Agent Chat")
+    st.title("🤵 AI Assistant Agent Chat")
 
     initialize_session_state()
     display_history()

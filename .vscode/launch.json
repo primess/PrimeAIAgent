@@ -1,15 +1,52 @@
 {
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python Debugger: Current File",
+            "name": "Run Backend (Uvicorn)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": [
+                "orchestrator.main:app",
+                "--host", "0.0.0.0",
+                "--port", "8000",
+                "--reload" // Added reload for easier development
+            ],
+            "jinja": true,
+            "console": "integratedTerminal",
+            "env": {
+                // Ensure environment variables like OPENAI_API_KEY are loaded if needed
+                // "PYTHONPATH": "${workspaceFolder}" // Uncomment if imports fail
+            }
+        },
+        {
+            "name": "Run Frontend (Streamlit)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "streamlit",
+            "args": [
+                "run",
+                "ui.py"
+            ],
+            "jinja": true,
+            "console": "integratedTerminal",
+            "env": {
+                // "PYTHONPATH": "${workspaceFolder}" // Uncomment if imports fail
+            }
+        },
+        {
+            "name": "Python Debugger: Current File", // Kept the original for flexibility
             "type": "debugpy",
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal"
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Run Backend and Frontend",
+            "configurations": ["Run Backend (Uvicorn)", "Run Frontend (Streamlit)"],
+            "stopAll": true // Stop both if one stops
         }
     ]
 }
