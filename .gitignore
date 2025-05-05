@@ -140,3 +140,5 @@ cython_debug/
 
 # Ruff cache
 .ruff_cache/
+# Roo folder
+.roo/
