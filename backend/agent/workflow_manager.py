@@ -1,6 +1,9 @@
 import os
+import logging # Added
 from typing import List, Dict, Any
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+
+logger = logging.getLogger(__name__) # Added
 
 # Assuming api_models will be in backend.web
 # We need ChatMessage for type hinting, but avoid circular dependency for now
@@ -30,8 +33,8 @@ class WorkflowManager:
         Returns:
             A dictionary containing the AI's response and the final workflow state.
         """
-        print(f"--- WorkflowManager: Processing Chat ---")
-        # print(f"DEBUG: Received chat_message object: {chat_message}") # Use model_dump if pydantic
+        logger.info("--- WorkflowManager: Processing Chat ---") # Changed
+        # logger.debug(f"Received chat_message object: {chat_message}") # Changed print to logger.debug
 
         # --- Prepare Graph Input ---
 
@@ -74,8 +77,8 @@ class WorkflowManager:
             "task_confirmed": initial_state_data.get("task_confirmed", False), # Ensure task_confirmed is included
         }
 
-        print(f"\n--- Invoking Graph ---")
-        print(
+        logger.info("--- Invoking Graph ---") # Changed
+        logger.debug( # Changed
             f"Initial State (Partial): {{'conversation_history': [msg.type for msg in conversation_history], 'gathered_details': {initial_graph_state.get('gathered_details')}}}"
         )
 
@@ -85,24 +88,24 @@ class WorkflowManager:
             # or be caught here if get_llm raises an exception.
             final_state = self.app_graph.invoke(initial_graph_state)
         except ValueError as e: # Catch potential API key error from config.get_llm
-             print(f"Graph Invocation Error (ValueError): {e}")
+             logger.error(f"Graph Invocation Error (ValueError): {e}") # Changed
              # Return an error structure instead of raising HTTPException
              return {
                  "response": f"Error: {str(e)}",
                  "state": initial_graph_state, # Return initial state on error
              }
         except Exception as e:
-            print(f"Unexpected Graph Invocation Error: {e}")
+            logger.error(f"Unexpected Graph Invocation Error: {e}", exc_info=True) # Changed
             # Return an error structure
             return {
                  "response": "An internal error occurred during graph execution.",
                  "state": initial_graph_state, # Return initial state on error
              }
 
-        print(
+        logger.debug( # Changed
             f"Final State (Partial): { {k: v for k, v in final_state.items() if k != 'conversation_history'} }"
         )
-        print(f"--- Graph Invocation Complete ---\n")
+        logger.info("--- Graph Invocation Complete ---") # Changed
 
 
         # --- Process Graph Output ---
@@ -139,8 +142,8 @@ class WorkflowManager:
                 response_content = final_conversation_history[-1].content
             else:
                 # This case might happen if the graph ends unexpectedly or after user input without AI reply
-                print(
-                    f"Warning: Graph ended, but last message was not from AI or state unclear. History: {serializable_history}"
+                logger.warning( # Changed
+                    f"Graph ended, but last message was not from AI or state unclear. History: {serializable_history}"
                 )
                 # Decide on appropriate response, maybe echo confirmation or an error
                 response_content = "Processing complete." # Generic completion message

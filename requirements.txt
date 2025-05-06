@@ -24,6 +24,7 @@ websockets==15.0.1
 streamlit
 requests
 pytest
+vcrpy>=4.0.0 # Added to ensure compatibility with urllib3 v2.x for pytest-recording
 httpx
 langgraph
 langchain-openai

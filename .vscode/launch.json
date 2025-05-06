@@ -12,6 +12,7 @@
                 "--port", "8000",
                 "--reload" // Added reload for easier development
             ],
+            "subProcess": true,
             "jinja": true,
             "console": "integratedTerminal",
             "env": {
@@ -28,6 +29,7 @@
                 "run",
                 "frontend/ui.py" // Updated path after refactoring
             ],
+            "subProcess": true,
             "jinja": true,
             "console": "integratedTerminal",
             "env": {
@@ -40,6 +42,24 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal"
+        },
+        {
+            "name": "Run CommunicationsBE",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": [
+                "main:app",
+                "--host", "0.0.0.0",
+                "--port", "5002",
+                "--reload"
+            ],
+            "subProcess": true,
+            "jinja": true,
+            "console": "integratedTerminal",
+            "env": {
+                // "PYTHONPATH": "${workspaceFolder}" // Uncomment if imports fail
+            }
         }
     ],
     "compounds": [

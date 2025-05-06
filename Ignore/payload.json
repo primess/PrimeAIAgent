@@ -1,0 +1,8 @@
+{
+  "target_phone_number": "+972547784498",
+  "task_instruction": "Call this number and ask if they have Prince Albert in a can.",
+  "call_context": {
+    "caller_name": "Bart",
+    "store_type": "Joke Shop"
+  }
+}

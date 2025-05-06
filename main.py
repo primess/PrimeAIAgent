@@ -1,13 +1,13 @@
 from starlette.websockets import WebSocketDisconnect
 import os
-import json
+import json # Already present, but ensure it is
 import base64
 import asyncio
 import websockets
 import logging
 import re # Added for input validation
-from websockets.connection import State
-import websockets.protocol # Added for explicit state checking
+from websockets.protocol import State # Changed from websockets.connection
+import websockets.protocol # Added for explicit state checking (this line is now redundant if only State is used from here, but harmless)
 from websockets.exceptions import ConnectionClosedError, ConnectionClosedOK # Added specific exceptions
 from fastapi import FastAPI, WebSocket, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
@@ -17,6 +17,11 @@ from twilio.rest import Client as TwilioClient # Added Twilio Client
 from twilio.base.exceptions import TwilioRestException # Added specific Twilio exception
 from dotenv import load_dotenv
 from typing import Optional # Added Optional
+from backend.web.call_handler_models import CallInitiationRequest # Added for Task 6
+from logging_config import LOGGING_CONFIG_DICT, setup_logging # Import the dict and setup function
+
+# Apply logging configuration immediately
+setup_logging()
 
 load_dotenv()
 
@@ -40,7 +45,9 @@ LOG_EVENT_TYPES = [ # For debugging OpenAI events
 
 # --- Initialization ---
 app = FastAPI()
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s ▶ %(message)s")
+
+# Logging configuration is now imported from logging_config.py
+# The LOG_DIR creation and LOG_FILE definition are also in logging_config.py
 
 # Validate essential configuration
 if not OPENAI_API_KEY:
@@ -71,29 +78,27 @@ async def index_page():
     """Basic status endpoint."""
     return {"message": "AI Assistant Agent is running!"}
 
-@app.get("/order", response_class=JSONResponse)
-async def handle_order(request: Request, instructions: str, phone_number: str):
-    """Initiates an outbound call with the provided instructions."""
-    logging.info(f"Received phone_number parameter: '{phone_number}'") # Log raw phone number
-    logging.info(f"Received order request: Instructions='{instructions[:100]}...', Phone='{phone_number}'") # Log truncated instructions
+@app.post("/order", response_class=JSONResponse) # Changed from GET to POST
+async def handle_order(request: Request, call_details: CallInitiationRequest): # Changed signature
+    """Initiates an outbound call using details from the POST request body."""
+    # --- Debugging Headers ---
+    logging.info(f"Incoming Request Headers: {dict(request.headers)}")
+    # --- End Debugging ---
+    logging.info(f"Received order request: Target='{call_details.target_phone_number}', Instruction='{call_details.task_instruction[:100]}...', Context Keys='{list(call_details.call_context.keys())}'")
 
     # --- Input Validation ---
-    if not instructions:
-        logging.error("Validation failed: instructions parameter is empty.")
-        raise HTTPException(status_code=400, detail="instructions parameter cannot be empty.")
+    # Validate instruction (from the new model field)
+    if not call_details.task_instruction:
+        logging.error("Validation failed: task_instruction parameter is empty.")
+        raise HTTPException(status_code=400, detail="task_instruction parameter cannot be empty.")
 
-    # Phone number validation: full international or local number
-    twilio_phone_number = os.getenv('TWILIO_PHONE_NUMBER', '')
-    country_code = re.match(r"^\+(\d{1,3})", twilio_phone_number)
-    if country_code:
-        country_code = country_code.group(1)
-        regex = r"^(?:\+" + country_code + r"[0-9]{3,14}|[0-9]{7,14})$"
-    else:
-        regex = r"^(?:\+[0-9]{1,3}[0-9]{3,14}|[0-9]{7,14})$"
-
-    if not re.match(regex, phone_number):
-        logging.error(f"Validation failed: Invalid phone_number format: {phone_number}")
-        raise HTTPException(status_code=400, detail="Invalid phone_number format. Must be a valid international or local number.")
+    # Validate target_phone_number format (E.164 recommended for Twilio)
+    # Simple regex for E.164: '+' followed by 1-15 digits, starting with 1-9.
+    # Twilio performs more thorough validation, this is a basic sanity check.
+    e164_regex = r"^\+[1-9]\d{1,14}$"
+    if not re.match(e164_regex, call_details.target_phone_number):
+        logging.error(f"Validation failed: Invalid target_phone_number format: {call_details.target_phone_number}. Expected E.164 format (e.g., +15551234567).")
+        raise HTTPException(status_code=400, detail="Invalid target_phone_number format. Expected E.164 format (e.g., +15551234567).")
 
     logging.info("Input validation passed.")
     # --- End Input Validation ---
@@ -108,10 +113,14 @@ async def handle_order(request: Request, instructions: str, phone_number: str):
         logging.info("VoiceResponse object created.")
         connect = Connect()
         stream = Stream(url=ws_url)
-        stream.parameter(name="instructions", value=instructions) # Pass instructions parameter
+        # Pass base instruction
+        stream.parameter(name="instructions", value=call_details.task_instruction)
+        # Serialize and pass the context dictionary
+        context_json = json.dumps(call_details.call_context)
+        stream.parameter(name="context", value=context_json)
         connect.append(stream)
         response.append(connect)
-        logging.info("Appended <Connect><Stream> with instructions parameter to VoiceResponse.")
+        logging.info("Appended <Connect><Stream> with 'instructions' and 'context' parameters to VoiceResponse.")
         # Add a fallback message if the stream fails
         response.say("Sorry, I couldn't connect to the ordering service.")
         logging.info("Appended fallback <Say> to VoiceResponse.")
@@ -126,11 +135,11 @@ async def handle_order(request: Request, instructions: str, phone_number: str):
 
         # Create the outbound call
         call = twilio_client.calls.create(
-            to=phone_number,
+            to=call_details.target_phone_number, # Use target_phone_number from request body
             from_=TWILIO_PHONE_NUMBER,
             twiml=twiml_content
         )
-        logging.info(f"Initiated call to {phone_number}, Call SID: {call.sid}")
+        logging.info(f"Initiated call to {call_details.target_phone_number}, Call SID: {call.sid}")
         return {"status": "Call initiated", "call_sid": call.sid}
     except TwilioRestException as e:
         logging.exception(f"Twilio API error initiating call: {e}") # Use logging.exception
@@ -163,16 +172,22 @@ async def handle_media_stream(websocket: WebSocket):
             ) as oai_ws:
                 openai_ws = oai_ws # Assign the connected WebSocket
                 logging.info(f"OPENAI_CONNECT_SUCCESS: Successfully connected to OpenAI. State: {openai_ws.state}") # Added diagnostic log (replaces previous)
+
+                # --- Try sending an initial update immediately ---
+                await send_session_update(openai_ws, "Initializing session...") # Send placeholder
+                logging.info("Sent initial placeholder session update to OpenAI.")
+                # --- End initial update ---
+
                 stream_sid: Optional[str] = None
-                instructions_for_call: Optional[str] = None # Store instructions for this specific call
+                # Removed instructions_for_call, will construct final prompt just before sending
 
                 async def receive_from_twilio():
-                    nonlocal stream_sid, instructions_for_call # Allow modification
+                    nonlocal stream_sid # Allow modification
                     logging.info(f"Entered receive_from_twilio task (SID={stream_sid})") # Added task entry log
                     """Receive messages from Twilio, handle events, forward audio."""
                     try:
                         while True: # Keep listening until disconnect
-                            logging.info(f"Attempting to receive from Twilio WebSocket (SID={stream_sid}). State: {ws.client_state}") # Added state log
+                            logging.debug(f"Attempting to receive from Twilio WebSocket (SID={stream_sid}). State: {ws.client_state}") # Added state log
                             # Check connection state before attempting to receive
                             if ws.client_state != WebSocketState.CONNECTED:
                                 logging.warning(f"Twilio WebSocket no longer connected (State: {ws.client_state}). Exiting receive loop.")
@@ -185,18 +200,34 @@ async def handle_media_stream(websocket: WebSocket):
                                     stream_sid = data['start']['streamSid']
                                     # Extract instructions from parameters passed in TwiML via WebSocket URI query params
                                     logging.info(f"DEBUG: Full start event data: {data['start']}")
-                                    # Extract instructions from custom parameters passed in TwiML
-                                    instructions_for_call = data['start']['customParameters'].get('instructions', 'Please describe your task.') # Default if not found
+                                    # Extract base instructions and context from custom parameters
+                                    custom_params = data['start'].get('customParameters', {}) # Get params safely
+                                    logging.info(f"DEBUG: Received customParameters: {custom_params}") # Log received params
+                                    base_instructions = custom_params.get('instructions', 'Please describe your task.') # Use custom_params
+                                    context_str = custom_params.get('context', '{}') # Use custom_params
+                                    try:
+                                        context_data = json.loads(context_str)
+                                    except json.JSONDecodeError:
+                                        logging.error(f"Error decoding context JSON for SID={stream_sid}: {context_str}")
+                                        context_data = {} # Use empty context on error
+
+                                    # Construct the final prompt
+                                    final_prompt = format_prompt(base_instructions, context_data)
+                                    # --- Debugging: Log the final prompt before sending ---
+                                    logging.info(f"DEBUG: Constructed final_prompt: {final_prompt}")
+                                    # --- End Debugging ---
+
                                     # Log expected audio format based on Twilio start event if available
                                     media_format = data['start'].get('mediaFormat', {})
                                     encoding = media_format.get('encoding', 'N/A')
                                     sample_rate = media_format.get('sampleRate', 'N/A')
                                     channels = media_format.get('channels', 'N/A')
-                                    logging.info(f"Twilio stream started: SID={stream_sid}, Instructions='{instructions_for_call[:50]}...', MediaFormat: encoding={encoding}, sampleRate={sample_rate}, channels={channels}") # Log truncated instructions
+                                    # Log truncated base instructions and context keys
+                                    logging.info(f"Twilio stream started: SID={stream_sid}, BaseInstructions='{base_instructions[:50]}...', ContextKeys='{list(context_data.keys())}', MediaFormat: encoding={encoding}, sampleRate={sample_rate}, channels={channels}")
                                     logging.info(f"TWILIO_START_RECEIVED: Received start event. Data: {json.dumps(data['start'])}") # Added diagnostic log
                                     logging.info(f"OpenAI session configured for input: g711_ulaw, output: g711_ulaw")
-                                    # Now that we have the instructions, configure the OpenAI session
-                                    await send_session_update(openai_ws, instructions_for_call)
+                                    # Now that we have the final prompt, configure the OpenAI session
+                                    await send_session_update(openai_ws, final_prompt) # Pass the combined prompt
 
                                 elif data['event'] == 'media':
                                     # Log received audio format (though Twilio usually only sends payload here)
@@ -257,11 +288,11 @@ async def handle_media_stream(websocket: WebSocket):
                     try:
                         async for openai_message in openai_ws:
                             # --- Added Logging ---
-                            logging.info(f"Attempting to receive from OpenAI WebSocket (SID={stream_sid}). State: {openai_ws.state}")
+                            logging.debug(f"Attempting to receive from OpenAI WebSocket (SID={stream_sid}). State: {openai_ws.state}")
                             # --- End Added Logging ---
                             logging.debug(f"Raw message received from OpenAI: {openai_message}") # Added Debug Log
                             response = json.loads(openai_message)
-                            logging.info(f"Received event type from OpenAI: {response.get('type')}") # Added Info Log
+                            logging.debug(f"Received event type from OpenAI: {response.get('type')}") # Added Info Log
                             # --- End Added Logging ---
 
                             # Log specific event types for debugging
@@ -388,27 +419,50 @@ async def handle_media_stream(websocket: WebSocket):
         # Final log indicating the handler for this specific Twilio connection is ending
         logging.info(f"Session handler for Twilio client {websocket.client.host}:{websocket.client.port} finished.")
 
-async def send_session_update(openai_ws, instructions: str):
-    """Send session update to OpenAI WebSocket with provided instructions."""
-    # Instructions are now passed directly as an argument
+# --- Helper function to format prompt (Task 6) ---
+def format_prompt(base_instruction: str, context_data: dict) -> str:
+    """Combines base instruction with formatted context data."""
+    prompt = base_instruction
+    if context_data:
+        prompt += "\n\nHere are the details gathered for this task:\n"
+        for key, value in context_data.items():
+            # Simple formatting, can be enhanced (e.g., handling nested dicts/lists)
+            prompt += f"- {key.replace('_', ' ').title()}: {value}\n"
+        prompt += "\nPlease proceed based on these details." # Or similar closing
+    return prompt
+# --- End Helper function ---
+
+async def send_session_update(openai_ws, final_prompt: str): # Changed signature
+    """Send session update to OpenAI WebSocket with the final combined prompt."""
+    # The final prompt (base instructions + formatted context) is now passed directly
 
     session_update = {
         "type": "session.update",
         "session": {
             "turn_detection": {"type": "server_vad"},
             "input_audio_format": "g711_ulaw",       # Format received from Twilio
-            "output_audio_format": "g711_ulaw",     # Request mu-law from OpenAI
+            "output_audio_format": "g711_ulaw",     # Reverted back from "mulaw"
             "voice": VOICE,                         # Defined OpenAI voice
-            "instructions": instructions,           # Dynamic instructions
+            "instructions": final_prompt,           # Use the final combined prompt
             "modalities": ["audio", "text"],        # Supported combination
             "temperature": 0.7,                     # Adjust creativity/randomness
         }
     }
     logging.info(f"Sending session update to OpenAI: {json.dumps(session_update)}")
+    # --- Debugging: Log the exact instructions being sent ---
+    logging.info(f"DEBUG: OpenAI session.update instructions: {session_update['session']['instructions']}")
+    # --- End Debugging ---
     await openai_ws.send(json.dumps(session_update))
 
 
 if __name__ == "__main__":
     import uvicorn
     # Use reload=True for development convenience
-    uvicorn.run("main:app", host="0.0.0.0", port=PORT, reload=True)
+    # Pass the custom logging configuration to Uvicorn
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=PORT,
+        reload=True,
+        log_config=LOGGING_CONFIG_DICT # Pass the dictionary
+    )

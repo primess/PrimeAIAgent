@@ -151,3 +151,6 @@ cython_debug/
 .roo/
 # PyPI configuration file
 .pypirc
+# Custom ignored folders
+IgnoreFolder/
+logs/

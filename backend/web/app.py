@@ -1,6 +1,18 @@
 import os
 import uvicorn
+import logging # Added
 from fastapi import FastAPI, HTTPException
+
+# Configure logging # Added
+# logging.basicConfig( # Removed redundant basicConfig
+#     level=logging.INFO,
+#     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+#     handlers=[
+#         logging.FileHandler("app.log"), # Log to a file
+#         logging.StreamHandler() # Also log to console
+#     ]
+# ) # Removed
+logger = logging.getLogger(__name__) # Added
 
 # Import the request model and the workflow manager
 from .api_models import ChatMessage
@@ -26,7 +38,7 @@ app = FastAPI()
 try:
     manager = WorkflowManager()
 except Exception as e:
-    print(f"FATAL: Failed to initialize WorkflowManager: {e}")
+    logger.fatal(f"Failed to initialize WorkflowManager: {e}") # Changed
     # Decide if the app should exit or run in a degraded state
     # For now, let it potentially fail later if manager is None
     manager = None # Or raise the exception
@@ -70,15 +82,17 @@ async def chat_endpoint(chat_message: ChatMessage):
         raise http_exc
     except Exception as e:
         # Catch unexpected errors during the process_chat call
-        print(f"Error during chat processing: {e}")
+        logger.error(f"Error during chat processing: {e}", exc_info=True) # Changed
         raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
 
 # Main execution block to run the server
 if __name__ == "__main__":
-    print("Starting FastAPI server for backend...")
+    logger.info("Starting FastAPI server for backend...") # Changed
     # Ensure manager initialized before starting server
     if manager is None:
-        print("ERROR: Cannot start server, WorkflowManager failed to initialize.")
+        logger.error("Cannot start server, WorkflowManager failed to initialize.") # Changed
     else:
+        # Uvicorn has its own logger, which can be configured separately if needed.
+        # For now, our application logger will handle app-specific logs.
         uvicorn.run(app, host="0.0.0.0", port=8000)

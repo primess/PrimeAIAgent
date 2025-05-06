@@ -1,3 +1,4 @@
+import logging # Added
 from typing import List
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 
@@ -5,6 +6,8 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from .state import GraphState
 from .config import get_llm
 from .llm_utils import parse_llm_json_response
+
+logger = logging.getLogger(__name__) # Added
 
 # --- LangGraph Nodes ---
 
@@ -15,7 +18,7 @@ def analyze_task(state: GraphState):
     2. Extract gathered details from the latest user message.
     Updates the state accordingly.
     """
-    print("--- Running Node: analyze_task ---")
+    logger.info("--- Running Node: analyze_task ---") # Changed
     llm = get_llm()
     history = state["conversation_history"]
     gathered_details = state.get(
@@ -26,7 +29,7 @@ def analyze_task(state: GraphState):
 
     # LLM Call 1: Identify Task and Required Details (if not already set)
     if not task_description or not required_details:
-        print("  LLM Call 1: Identifying task and required details...")
+        logger.info("  LLM Call 1: Identifying task and required details...") # Changed
         prompt1 = f"""Analyze the following conversation history: {history}
 
     Based *only* on the conversation history, identify the primary task the user wants to accomplish and the essential pieces of information (required details) needed to fulfill it.
@@ -45,21 +48,21 @@ def analyze_task(state: GraphState):
                 required_details = (
                     parsed_response1.get("required_details") or required_details
                 )  # Keep existing if LLM returns null
-                print(
+                logger.debug( # Changed
                     f"  LLM Call 1 Result: Task='{task_description}', Required={required_details}"
                 )
             else:
-                print(
+                logger.warning( # Changed
                     "  LLM Call 1: Failed to parse JSON response for task identification."
                 )
                 # Decide how to handle failure - maybe keep existing state or raise error? For now, keep existing.
         except Exception as e:
-            print(f"  LLM Call 1 Error: {e}")
+            logger.error(f"  LLM Call 1 Error: {e}", exc_info=True) # Changed
             # Handle error appropriately, maybe keep existing state
 
     # LLM Call 2: Extract Details from Latest User Message
     if history and isinstance(history[-1], HumanMessage) and required_details:
-        print("  LLM Call 2: Extracting details from the latest message...")
+        logger.info("  LLM Call 2: Extracting details from the latest message...") # Changed
         last_user_message = history[-1].content
         # Only consider details that are still missing
         details_to_look_for = [
@@ -90,21 +93,21 @@ def analyze_task(state: GraphState):
                 response2 = llm.invoke(prompt2)
                 parsed_response2 = parse_llm_json_response(response2)
                 if parsed_response2:
-                    print(f"  LLM Call 2 Result (Newly Gathered): {parsed_response2}")
+                    logger.debug(f"  LLM Call 2 Result (Newly Gathered): {parsed_response2}") # Changed
                     # Update gathered_details safely, only adding keys that are in required_details
                     for key, value in parsed_response2.items():
                         if key in required_details:
                             gathered_details[key] = value
                         else:
-                            print(
-                                f"  Warning: LLM returned unexpected detail '{key}', ignoring."
+                            logger.warning( # Changed
+                                f"  LLM returned unexpected detail '{key}', ignoring."
                             )
                 else:
-                    print(
+                    logger.warning( # Changed
                         "  LLM Call 2: Failed to parse JSON response for detail extraction."
                     )
             except Exception as e:
-                print(f"  LLM Call 2 Error: {e}")
+                logger.error(f"  LLM Call 2 Error: {e}", exc_info=True) # Changed
                 # Handle error appropriately
 
     # Recalculate missing details based on potentially updated gathered_details
@@ -112,10 +115,10 @@ def analyze_task(state: GraphState):
         detail for detail in required_details if detail not in gathered_details
     ]
 
-    print(f"  Task Desc: {task_description}")
-    print(f"  Required : {required_details}")
-    print(f"  Gathered : {gathered_details}")
-    print(f"  Missing  : {missing_details}")
+    logger.debug(f"  Task Desc: {task_description}") # Changed
+    logger.debug(f"  Required : {required_details}") # Changed
+    logger.debug(f"  Gathered : {gathered_details}") # Changed
+    logger.debug(f"  Missing  : {missing_details}") # Changed
 
     # Check for confirmation (Keep existing logic)
     confirmed = state.get("task_confirmed", False)  # Default to False
@@ -141,7 +144,7 @@ def analyze_task(state: GraphState):
                 ]
             ):
                 confirmed = True
-                print("  Task confirmed by user.")
+                logger.info("  Task confirmed by user.") # Changed
 
     return {
         "task_description": task_description,
@@ -156,12 +159,12 @@ def ask_for_details(state: GraphState):
     """
     Generates a question asking for the next missing piece of information using an LLM.
     """
-    print("--- Running Node: ask_for_details ---")
+    logger.info("--- Running Node: ask_for_details ---") # Changed
     missing = state.get("missing_details", [])
     if not missing:
         # Should not happen if routing is correct, but handle defensively
         ai_message = AIMessage(content="It seems I have all the details needed!")
-        print("  No missing details found (unexpected).")
+        logger.warning("  No missing details found (unexpected).") # Changed
     else:
         llm = get_llm()
         next_detail_needed = missing[0]
@@ -169,7 +172,7 @@ def ask_for_details(state: GraphState):
         gathered = state.get("gathered_details", {})
         history = state.get("conversation_history", [])
 
-        print(f"  LLM Call: Generating question for '{next_detail_needed}'...")
+        logger.info(f"  LLM Call: Generating question for '{next_detail_needed}'...") # Changed
         prompt = f"""Conversation History:
 {history}
 
@@ -188,13 +191,13 @@ Question:"""
             response = llm.invoke(prompt)
             question = response.content.strip()
             ai_message = AIMessage(content=question)
-            print(f"  LLM Generated Question: {question}")
+            logger.debug(f"  LLM Generated Question: {question}") # Changed
         except Exception as e:
-            print(f"  LLM Call Error generating question: {e}")
+            logger.error(f"  LLM Call Error generating question: {e}", exc_info=True) # Changed
             # Fallback question
             question = f"Okay, I still need the {next_detail_needed.replace('_', ' ')}. Can you provide that?"
             ai_message = AIMessage(content=question)
-            print(f"  Using Fallback Question: {question}")
+            logger.warning(f"  Using Fallback Question: {question}") # Changed
 
     # Add the AI's question to the history
     return {"conversation_history": [ai_message]}
@@ -204,7 +207,7 @@ def confirm_task(state: GraphState):
     """
     Generates a confirmation message summarizing the gathered details using an LLM.
     """
-    print("--- Running Node: confirm_task ---")
+    logger.info("--- Running Node: confirm_task ---") # Changed
     gathered = state.get("gathered_details", {})
     task_desc = state.get("task_description", "your request")
     history = state.get("conversation_history", [])
@@ -212,10 +215,10 @@ def confirm_task(state: GraphState):
     if not gathered:
         # Should not happen if routing leads here, but handle defensively
         confirmation_message = "It seems I don't have any details to confirm yet. Could you please describe what you need?"
-        print("  No details gathered to confirm (unexpected).")
+        logger.warning("  No details gathered to confirm (unexpected).") # Changed
     else:
         llm = get_llm()
-        print("  LLM Call: Generating confirmation message...")
+        logger.info("  LLM Call: Generating confirmation message...") # Changed
         prompt = f"""Conversation History:
 {history}
 
@@ -235,9 +238,9 @@ Confirmation Message:"""
             # Ensure it ends correctly
             if not confirmation_message.endswith("Is that correct?"):
                 confirmation_message += " Is that correct?"
-            print(f"  LLM Generated Confirmation: {confirmation_message}")
+            logger.debug(f"  LLM Generated Confirmation: {confirmation_message}") # Changed
         except Exception as e:
-            print(f"  LLM Call Error generating confirmation: {e}")
+            logger.error(f"  LLM Call Error generating confirmation: {e}", exc_info=True) # Changed
             # Fallback confirmation
             summary_parts = [
                 f"{key.replace('_', ' ')}: {value}" for key, value in gathered.items()
@@ -246,7 +249,7 @@ Confirmation Message:"""
             confirmation_message = (
                 f"Okay, just to confirm {task_desc}: {summary}. Is that correct?"
             )
-            print(f"  Using Fallback Confirmation: {confirmation_message}")
+            logger.warning(f"  Using Fallback Confirmation: {confirmation_message}") # Changed
 
     ai_message = AIMessage(content=confirmation_message)
 
@@ -259,8 +262,8 @@ def task_complete(state: GraphState):
     Placeholder node for when the task is confirmed and finished.
     Just prints a message and returns the final state.
     """
-    print("--- Running Node: task_complete ---")
-    print("  Task confirmed and graph finished.")
+    logger.info("--- Running Node: task_complete ---") # Changed
+    logger.info("  Task confirmed and graph finished.") # Changed
     # Add a final message to the history before ending
     final_message = AIMessage(content="Okay, task confirmed and completed!")
     # Use add_messages logic if available, otherwise append directly

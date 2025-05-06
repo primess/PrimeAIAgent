@@ -1,6 +1,9 @@
 import json
 import re
+import logging # Added
 from langchain_core.messages import BaseMessage
+
+logger = logging.getLogger(__name__) # Added
 
 # --- Helper Function for JSON Parsing ---
 def parse_llm_json_response(response: BaseMessage) -> dict | None:
@@ -25,10 +28,10 @@ def parse_llm_json_response(response: BaseMessage) -> dict | None:
 
         return json.loads(json_str)
     except json.JSONDecodeError as e:
-        print(f"Error: Failed to parse JSON from LLM response. Error: {e}")
-        print(f"  LLM Response Content: {content}")
+        logger.error(f"Failed to parse JSON from LLM response. Error: {e}", exc_info=True) # Changed
+        logger.debug(f"  LLM Response Content for JSON error: {content}") # Changed
         return None
     except Exception as e:  # Catch other potential errors
-        print(f"Error: Unexpected error during JSON parsing. Error: {e}")
-        print(f"  LLM Response Content: {content}")
+        logger.error(f"Unexpected error during JSON parsing. Error: {e}", exc_info=True) # Changed
+        logger.debug(f"  LLM Response Content for unexpected error: {content}") # Changed
         return None

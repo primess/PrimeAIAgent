@@ -22,9 +22,9 @@ mock_st.chat_input = MagicMock() # Although not directly tested here, ui.py call
 # Apply the mock to the sys.modules
 sys.modules['streamlit'] = mock_st
 
-# Now import the specific function and constants we need from the ui module
-from ui import handle_input, API_URL, initialize_session_state
-import ui # Keep this import for patching requests within the ui module context
+# Now import the specific function and constants we need from the ui module (inside frontend)
+from frontend.ui import handle_input, API_URL, initialize_session_state
+import frontend.ui as ui # Keep this import for patching requests within the ui module context
 
 class TestChatUI(unittest.TestCase):
 
@@ -57,7 +57,7 @@ class TestChatUI(unittest.TestCase):
         mock_st.session_state.messages = []
 
 
-    @patch('ui.requests.post') # Patch requests.post within the ui module's namespace
+    @patch('frontend.ui.requests.post') # Patch requests.post within the ui module's namespace
     def test_handle_input_success(self, mock_post):
         """Test handle_input successfully sends message and processes response."""
         # Simulate user input FIRST
@@ -129,12 +129,12 @@ class TestChatUI(unittest.TestCase):
         mock_st.error.assert_not_called()
 
 
-    @patch('ui.requests.post')
+    @patch('frontend.ui.requests.post')
     def test_handle_input_connection_error(self, mock_post):
         """Test handle_input handles a connection error."""
         # Configure the mock to raise a RequestException
         error_msg = "Connection refused"
-        mock_post.side_effect = ui.requests.exceptions.RequestException(error_msg)
+        mock_post.side_effect = ui.requests.exceptions.RequestException(error_msg) # Use the aliased ui
 
         # Simulate user input
         user_input = "Test connection error"
@@ -163,13 +163,13 @@ class TestChatUI(unittest.TestCase):
         mock_st.error.assert_called_once_with(f"Error connecting to the AI Assistant Agent engine: {error_msg}")
 
 
-    @patch('ui.requests.post')
+    @patch('frontend.ui.requests.post')
     def test_handle_input_bad_status(self, mock_post):
         """Test handle_input handles a bad HTTP status code (e.g., 500)."""
         # Configure the mock response
         mock_response = MagicMock()
         mock_response.status_code = 500
-        http_error = ui.requests.exceptions.HTTPError("Server Error")
+        http_error = ui.requests.exceptions.HTTPError("Server Error") # Use the aliased ui
         mock_response.raise_for_status.side_effect = http_error
         mock_post.return_value = mock_response
 
@@ -201,7 +201,7 @@ class TestChatUI(unittest.TestCase):
         mock_st.error.assert_called_once_with(f"Error connecting to the AI Assistant Agent engine: {http_error}")
 
 
-    @patch('ui.requests.post')
+    @patch('frontend.ui.requests.post')
     def test_handle_input_non_json_response(self, mock_post):
         """Test handle_input handles a non-JSON response from the server."""
         # Configure the mock response
@@ -238,7 +238,7 @@ class TestChatUI(unittest.TestCase):
         mock_st.error.assert_called_once_with("Error: Could not decode JSON response from the server.")
 
 
-    @patch('ui.requests.post')
+    @patch('frontend.ui.requests.post')
     def test_handle_input_missing_response_key(self, mock_post):
         """Test handle_input handles a JSON response missing the 'response' key."""
         # Configure the mock response
