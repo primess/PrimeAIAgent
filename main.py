@@ -61,15 +61,25 @@ twilio_client = TwilioClient(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 # --- Helper Functions ---
 def get_websocket_url(request: Request) -> str:
     """Determines the WebSocket URL (wss://) based on the request."""
-    scheme = "wss" if request.url.scheme in ["https", "wss"] else "ws"
-    # Use X-Forwarded-Host if available (common with proxies like ngrok)
-    host = request.headers.get("x-forwarded-host", request.url.hostname)
-    port_str = f":{request.url.port}" if request.url.port else ""
-    # Avoid adding default ports 80/443 explicitly
-    if (scheme == "ws" and request.url.port == 80) or \
-        (scheme == "wss" and request.url.port == 443):
-        port_str = ""
-    return f"{scheme}://{host}{port_str}/media-stream"
+    ngrok_url_env = os.getenv("NGROK_URL")
+    # NGROK_PORT is not typically needed for the public Twilio Stream URL
+    # as ngrok maps its public URL (usually on port 443 for wss) to your local port.
+    if ngrok_url_env:
+        # Assume ngrok provides an HTTPS endpoint, so use wss.
+        # Do not append the local port to the public ngrok hostname for Twilio.
+        # NGROK_URL should be just the hostname, e.g., "xxxx.ngrok-free.app"
+        return f"wss://{ngrok_url_env}/media-stream"
+    else:
+        # Fallback for non-ngrok deployments (e.g., direct public IP or other proxy)
+        scheme = "wss" if request.url.scheme in ["https", "wss"] else "ws"
+        # Use X-Forwarded-Host if available (common with proxies like ngrok)
+        host = request.headers.get("x-forwarded-host", request.url.hostname)
+        port_str = f":{request.url.port}" if request.url.port else ""
+        # Avoid adding default ports 80/443 explicitly
+        if (scheme == "ws" and request.url.port == 80) or \
+            (scheme == "wss" and request.url.port == 443):
+            port_str = ""
+        return f"{scheme}://{host}{port_str}/media-stream"
 
 
 # --- FastAPI Endpoints ---
@@ -77,6 +87,26 @@ def get_websocket_url(request: Request) -> str:
 async def index_page():
     """Basic status endpoint."""
     return {"message": "AI Assistant Agent is running!"}
+
+@app.get("/", response_class=JSONResponse)
+async def index_page():
+    """Basic status endpoint."""
+    return {"message": "AI Assistant Agent is running!"}
+
+from backend.agent.workflow_manager import WorkflowManager
+
+workflow_manager = WorkflowManager()
+
+@app.post("/chat", response_class=JSONResponse)
+async def chat_endpoint(request: Request):
+    """Processes chat messages and returns the AI's response."""
+    try:
+        chat_message = await request.json()
+        response = await workflow_manager.process_chat(chat_message)
+        return response
+    except Exception as e:
+        logging.error(f"Error processing chat message: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/order", response_class=JSONResponse) # Changed from GET to POST
 async def handle_order(request: Request, call_details: CallInitiationRequest): # Changed signature

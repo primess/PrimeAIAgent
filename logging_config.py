@@ -25,17 +25,17 @@ LOGGING_CONFIG_DICT = { # Renamed to avoid conflict if we import LOGGING_CONFIG 
         },
     },
     "handlers": {
-        "default": { # Console handler for Uvicorn's default/error logs
+        "default": { # Console handler for Uvicorn's default/error logs AND general app logs
             "formatter": "default",
             "class": "logging.StreamHandler",
-            "stream": "ext://sys.stderr",
-            "level": "INFO",
+            "stream": "ext://sys.stderr", # Changed to stderr for all non-access console logs
+            "level": "DEBUG", # Changed to DEBUG to see app debug messages
         },
         "access_console": { # Console handler for Uvicorn's access logs
             "formatter": "access",
             "class": "logging.StreamHandler",
             "stream": "ext://sys.stdout",
-            "level": "INFO",
+            "level": "INFO", # Access logs usually kept at INFO
         },
         "file_app": { # File handler for all application logs (root logger)
             "formatter": "default",
@@ -44,14 +44,14 @@ LOGGING_CONFIG_DICT = { # Renamed to avoid conflict if we import LOGGING_CONFIG 
             "maxBytes": 1024 * 1024 * 5,  # 5 MB
             "backupCount": 3,
             "encoding": "utf8",
-            "level": "INFO",
+            "level": "DEBUG", # Changed to DEBUG to capture all app debug messages in file
         },
     },
     "loggers": {
-        "": { # Root logger configuration
-            "handlers": ["default", "file_app"], # Log to console and file
-            "level": "INFO",
-            "propagate": False # Prevent root logger messages from being handled by parent (none in this case, but good practice)
+        "": { # Root logger configuration for the application
+            "handlers": ["default", "file_app"], # Log to console (stderr) and file
+            "level": "DEBUG", # Changed to DEBUG for the application root
+            "propagate": False
         },
         "uvicorn.error": { # Uvicorn's own error logs
             "handlers": ["default", "file_app"], # Also send Uvicorn errors to our file

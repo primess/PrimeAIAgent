@@ -131,6 +131,18 @@ def test_order_empty_context(mock_twilio_create): # Correctly indented
     params = {param.get('name'): param.get('value') for param in stream_element.findall('Parameter')}
     assert params.get('context') == '{}', "Context parameter should be empty JSON object string"
 
-# Note: Testing the WebSocket '/media-stream' endpoint is more complex
-# and often requires more involved mocking or integration testing setups.
-# These tests focus on the synchronous '/order' endpoint modifications.
+@pytest.mark.asyncio
+async def test_trigger_call_success(mock_twilio_create):
+    """Test successful call initiation via POST /order with trigger_call data"""
+    test_payload = {
+        "target_phone_number": "+15551234567",
+        "task_instruction": "Deliver the pizza ASAP! pizza_size: large, toppings: pepperoni",
+    }
+
+    response = client.post("/order", json=test_payload)
+
+    assert response.status_code == 200
+    response_json = response.json()
+    assert response_json["status"] == "Call initiated"
+    assert "call_sid" in response_json
+    assert response_json["call_sid"].startswith("CA")

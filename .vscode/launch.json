@@ -67,6 +67,11 @@
             "name": "Run Backend and Frontend",
             "configurations": ["Run Backend (Uvicorn)", "Run Frontend (Streamlit)"],
             "stopAll": true // Stop both if one stops
+        },
+        {
+            "name": "Run All (BE, FE, Communications)",
+            "configurations": ["Run Backend (Uvicorn)", "Run Frontend (Streamlit)", "Run CommunicationsBE"],
+            "stopAll": true
         }
     ]
 }

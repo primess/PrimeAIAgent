@@ -65,7 +65,7 @@ async def chat_endpoint(chat_message: ChatMessage):
 
     try:
         # Delegate processing to the manager
-        result = manager.process_chat(chat_message)
+        result = await manager.process_chat(chat_message)
 
         # Check if the manager returned an error response
         if result.get("response", "").startswith("Error:"):

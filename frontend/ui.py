@@ -23,7 +23,7 @@ def display_history():
     """Displays the chat history stored in session state."""
     # Display messages based on the potentially updated history from agent_state
     for message in st.session_state.get("messages", []):
-        with st.chat_message(message["role"]):
+        with st.chat_message(message.get("role", "user")):  # Use .get() to safely access "role"
             st.markdown(message["content"])
 
 def handle_input(prompt):
@@ -57,7 +57,9 @@ def handle_input(prompt):
                 st.session_state.agent_state = new_agent_state
 
                 # Update the display messages based on the history from the backend state
-                st.session_state.messages = st.session_state.agent_state.get("conversation_history", [])
+                conversation_history = st.session_state.agent_state.get("conversation_history", [])
+                st.write(f"Conversation History: {conversation_history}")  # Add logging
+                st.session_state.messages = conversation_history
 
                 # Rerun to refresh the display with the updated history
                 st.rerun()

@@ -22,9 +22,9 @@ class WorkflowManager:
         self.app_graph = app_graph
         # Potentially load other resources or configurations if needed
 
-    def process_chat(self, chat_message: Any) -> Dict[str, Any]:
+    async def process_chat(self, chat_message: Any) -> Dict[str, Any]:
         """
-        Processes a chat message using the LangGraph workflow.
+        Processes a chat message using the LangGraph workflow asynchronously.
 
         Args:
             chat_message: An object containing the user's message and conversation history
@@ -86,7 +86,7 @@ class WorkflowManager:
         try:
             # Note: Error handling for API key should ideally happen within get_llm
             # or be caught here if get_llm raises an exception.
-            final_state = self.app_graph.invoke(initial_graph_state)
+            final_state = await self.app_graph.ainvoke(initial_graph_state)
         except ValueError as e: # Catch potential API key error from config.get_llm
              logger.error(f"Graph Invocation Error (ValueError): {e}") # Changed
              # Return an error structure instead of raising HTTPException
