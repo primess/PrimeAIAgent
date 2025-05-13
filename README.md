@@ -12,7 +12,7 @@ This guide covers the setup and operation of all components for an end-to-end fl
 
 Before you begin, ensure you have the following installed and configured:
 
-*   **Python:** Version 3.8 or higher. You can download it from [python.org](https://www.python.org/).
+*   **Python:** Version 3.12 or higher. You can download it from [python.org](https://www.python.org/).
 *   **pip:** Python's package installer (usually comes with Python). Verify installation with `pip --version`.
 *   **Git:** For cloning the repository. Download from [git-scm.com](https://git-scm.com/).
 *   **ngrok Account:** A registered account with ngrok. Sign up at [ngrok.com](https://ngrok.com/). You'll need your authtoken. (Required primarily for the Voice Agent).
