@@ -14,7 +14,7 @@ Deliver a conversational AI assistant that can execute real‑world tasks—begi
   * Opens a **WebSocket to OpenAI** (`gpt‑4o‑realtime-preview`) and forwards audio both ways.
   * Sends `session.update` with dynamic `instructions`, `turn_detection`, input/output formats, and selected voice (`alloy`).
   * Streams OpenAI audio deltas back to Twilio in real time.
-* **Configuration** via `.env` (OPENAI_API_KEY, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER, etc.).
+* **Configuration** via `.env` (CHAT_MODEL_API_KEY, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER, etc.).
 * **Robust logging & error‑handling** for OpenAI/Twilio disconnects, validation failures, and retries.
 
 > **Summary** – The call‑handler already converts text instructions → two‑way phone conversation in Hebrew. The forthcoming **Orchestration Engine** will sit in front of it, generate the instructions, and call `/order`.

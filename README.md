@@ -72,7 +72,7 @@ Proper configuration is crucial for the application to connect to external servi
         TWILIO_PHONE_NUMBER=+1xxxxxxxxxx # Your Twilio phone number
 
         # OpenAI Credentials (Used by Orchestrator Agent and Call Handler Service)
-        OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+        CHAT_MODEL_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
         # Optional: Specify a particular OpenAI model for the Call Handler's real-time voice interaction
         # OPENAI_MODEL="gpt-4o-realtime-preview-2024-10-01"
         

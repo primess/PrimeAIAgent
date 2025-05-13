@@ -28,14 +28,19 @@ load_dotenv()
 # --- Configuration ---
 PORT = int(os.getenv('PORT', 5002))
 # OpenAI
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-OPENAI_MODEL = os.getenv('OPENAI_MODEL', "gpt-4o-realtime-preview-2024-10-01") # Specify model
-OPENAI_WS_URL = f"wss://api.openai.com/v1/realtime?model={OPENAI_MODEL}"
+CHAT_MODEL_API_KEY = os.getenv('CHAT_MODEL_API_KEY')
+REALTIME_VOICE_API_KEY = os.getenv('CHAT_MODEL_API_KEY')
+REALTIME_VOICE_WS_URL = os.getenv('REALTIME_VOICE_WS_URL') # OpenAI Realtime Voice WebSocket URL
+
+#for openai direct - comment out
+#REALTIME_AI_MODEL = os.getenv('REALTIME_AI_MODEL', "gpt-4o-realtime-preview-2024-10-01") # Specify model
+#OPENAI_WS_URL = f"wss://api.openai.com/v1/realtime?model={OPENAI_MODEL}"
 VOICE = os.getenv('VOICE', 'alloy') # OpenAI Voice
 # Twilio
 TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID')
 TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN') # Renamed from TWILIO_TOKEN for consistency
 TWILIO_PHONE_NUMBER = os.getenv('TWILIO_PHONE_NUMBER')
+
 # General
 LOG_EVENT_TYPES = [ # For debugging OpenAI events
     'response.content.done', 'rate_limits.updated', 'response.done',
@@ -50,8 +55,8 @@ app = FastAPI()
 # The LOG_DIR creation and LOG_FILE definition are also in logging_config.py
 
 # Validate essential configuration
-if not OPENAI_API_KEY:
-    raise ValueError('Missing OPENAI_API_KEY. Please set it in the .env file.')
+if not CHAT_MODEL_API_KEY:
+    raise ValueError('Missing CHAT_MODEL_API_KEY. Please set it in the .env file.')
 if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN or not TWILIO_PHONE_NUMBER:
     raise ValueError('Missing Twilio credentials (SID, Auth Token, Phone Number). Please set them in the .env file.')
 
@@ -191,12 +196,12 @@ async def handle_media_stream(websocket: WebSocket):
     async def session_handler(ws: WebSocket):
         nonlocal openai_ws # Allow modification of outer scope variable
         try:
-            logging.info(f"OPENAI_CONNECT_ATTEMPT: Attempting connection to OpenAI at {OPENAI_WS_URL}") # Added diagnostic log (replaces previous)
+            logging.info(f"OPENAI_CONNECT_ATTEMPT: Attempting connection to OpenAI at {REALTIME_VOICE_WS_URL}") # Added diagnostic log (replaces previous)
             async with websockets.connect(
-                OPENAI_WS_URL,
+                REALTIME_VOICE_WS_URL,
                 additional_headers={
-                    "Authorization": f"Bearer {OPENAI_API_KEY}",
-                    "OpenAI-Beta": "realtime=v1"
+                    "api-key": REALTIME_VOICE_API_KEY,
+                    # "OpenAI-Beta": "realtime=v1"
                 },
                 open_timeout=10 # Add a timeout
             ) as oai_ws:
