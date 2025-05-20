@@ -28,3 +28,4 @@ vcrpy>=4.0.0 # Added to ensure compatibility with urllib3 v2.x for pytest-record
 httpx
 langgraph
 langchain-openai
+mcp[server,cli]

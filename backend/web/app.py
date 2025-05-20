@@ -1,10 +1,17 @@
 import os
 import uvicorn
-import logging # Added
-from fastapi import FastAPI, HTTPException
+import logging
+import httpx  # Still here, might be used by MCP client or other parts
+from fastapi import FastAPI, HTTPException, Request
+from backend.web.call_handler_models import CallInitiationRequest
 
-# Configure logging # Added
-# logging.basicConfig( # Removed redundant basicConfig
+# MCP Client Imports
+import mcp.client
+from mcp.client.transports.sse import sse_client_transport
+from mcp.common.errors import MCPError, ToolError, ClientError # Added more specific MCP errors
+
+# Configure logging
+# logging.basicConfig(
 #     level=logging.INFO,
 #     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
 #     handlers=[
@@ -42,6 +49,13 @@ except Exception as e:
     # Decide if the app should exit or run in a degraded state
     # For now, let it potentially fail later if manager is None
     manager = None # Or raise the exception
+
+# Configuration for MCP Server
+DEFAULT_MCP_SERVER_URL = "http://localhost:5002"
+MCP_SERVER_BASE_URL = os.getenv("MCP_SERVER_URL", DEFAULT_MCP_SERVER_URL)
+
+if MCP_SERVER_BASE_URL == DEFAULT_MCP_SERVER_URL:
+    logger.warning(f"MCP_SERVER_URL not set, using default: {DEFAULT_MCP_SERVER_URL}") # Added warning
 
 # Root endpoint
 @app.get("/")
@@ -84,6 +98,80 @@ async def chat_endpoint(chat_message: ChatMessage):
         # Catch unexpected errors during the process_chat call
         logger.error(f"Error during chat processing: {e}", exc_info=True) # Changed
         raise HTTPException(status_code=500, detail="An unexpected error occurred.")
+
+# --- MCP Client Service Logic ---
+async def call_initiation_tool_on_mcp_server(params: CallInitiationRequest) -> dict:
+    """
+    Connects to the MCP server via SSE, initializes a session, and calls the
+    'initiate_call_mcp_tool' with the provided parameters.
+    """
+    # Ensure MCP_SERVER_BASE_URL does not have a trailing slash for clean URL construction
+    base_url = MCP_SERVER_BASE_URL.rstrip('/')
+    mcp_sse_url = f"{base_url}/mcp/sse"
+    mcp_messages_post_url = f"{base_url}/mcp/messages" # Required for sse_client_transport
+
+    logger.info(f"Attempting to connect to MCP server via SSE at {mcp_sse_url} (POST to {mcp_messages_post_url})")
+
+    try:
+        # httpx.AsyncClient can be passed to sse_client_transport if specific httpx configs are needed
+        # For now, let sse_client_transport manage its own client.
+        async with sse_client_transport(
+            uri=mcp_sse_url, 
+            post_uri=mcp_messages_post_url
+            # client=httpx.AsyncClient() # Optionally pass a pre-configured httpx client
+        ) as (reader, writer):
+            async with mcp.client.ClientSession(reader, writer, name="fastapi-mcp-client") as session:
+                logger.info("MCP client session created. Initializing...")
+                await session.initialize(capabilities={}) # Initialize with empty capabilities for now
+                logger.info("MCP session initialized. Calling 'initiate_call_mcp_tool'.")
+
+                tool_args = {
+                    "target_phone_number": params.target_phone_number,
+                    "task_instruction": params.task_instruction,
+                    "call_context": params.call_context
+                }
+                
+                tool_result = await session.call_tool("initiate_call_mcp_tool", tool_args)
+                logger.info(f"Successfully called 'initiate_call_mcp_tool'. Result: {tool_result}")
+                
+                # Assuming tool_result is already a dict as per the tool's return type hint
+                if not isinstance(tool_result, dict):
+                    logger.error(f"Unexpected tool result type: {type(tool_result)}. Expected dict. Result: {tool_result}")
+                    raise HTTPException(status_code=500, detail="MCP tool returned unexpected data type.")
+                return tool_result
+
+    except ClientError as e: # More specific MCP client-side errors (e.g., connection, protocol)
+        logger.error(f"MCP Client Error calling 'initiate_call_mcp_tool': {e.code} - {e.message}", exc_info=True)
+        # You might want to map e.code to specific HTTP status codes if needed
+        status_code = 503 # Service Unavailable for connection issues
+        if e.code in ["protocol.error", "serialization.error"]:
+            status_code = 500 
+        raise HTTPException(status_code=status_code, detail=f"MCP Client error: {e.message or str(e)}")
+    except ToolError as e: # Errors originating from the tool itself (e.g., validation, execution)
+        logger.error(f"MCP Tool Error from 'initiate_call_mcp_tool': {e.code} - {e.message}", exc_info=True)
+        # ToolError often implies a client-side mistake (bad input) or server-side tool logic issue.
+        # Mapping to 400 for validation-like errors or 500 for general tool execution errors.
+        status_code = 400 if e.code in ["tool.input_validation_error"] else 500
+        raise HTTPException(status_code=status_code, detail=f"MCP Tool error: {e.message or str(e)}")
+    except MCPError as e: # Generic MCP errors
+        logger.error(f"Generic MCP Error calling 'initiate_call_mcp_tool': {e.code} - {e.message}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"MCP Server error: {e.message or str(e)}")
+    except httpx.ConnectError as e: # Specific error for connection failure if httpx is used directly or by MCP
+        logger.error(f"HTTPX ConnectError: Failed to connect to MCP server at {mcp_sse_url}: {e}", exc_info=True)
+        raise HTTPException(status_code=503, detail=f"Service unavailable: Could not connect to MCP server. {str(e)}")
+    except Exception as e: # Catch-all for other unexpected errors
+        logger.error(f"Unexpected error calling 'initiate_call_mcp_tool': {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred while communicating with the MCP service: {str(e)}")
+
+# New FastAPI endpoint to trigger MCP client logic
+@app.post("/mcp/initiate_call", response_model=dict)
+async def mcp_initiate_call_endpoint(call_params: CallInitiationRequest):
+    """
+    Receives call parameters and uses the MCP client to request call initiation
+    from the MCP server (main.py).
+    """
+    logger.info(f"Received request for /mcp/initiate_call with params: {call_params.model_dump(exclude_none=True)}")
+    return await call_initiation_tool_on_mcp_server(call_params)
 
 
 # Main execution block to run the server
