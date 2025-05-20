@@ -25,6 +25,12 @@ setup_logging()
 
 load_dotenv()
 
+# --- MCP Imports ---
+from mcp.server.fastmcp import FastMCP
+from mcp.server.sse import SseServerTransport # Added for SSE Transport
+# asyncio, re, json, os are used and should be imported.
+# asyncio and re are usually at the top. json and os are already imported.
+
 # --- Configuration ---
 PORT = int(os.getenv('PORT', 5002))
 # OpenAI
@@ -63,9 +69,24 @@ if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN or not TWILIO_PHONE_NUMBER:
 # Initialize Twilio Client
 twilio_client = TwilioClient(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
+# --- MCP Server Initialization ---
+mcp_server = FastMCP(
+    name="call_initiator_service",
+    version="0.1.0",
+    description="A service to initiate outbound calls via Twilio."
+)
+
+# --- MCP SSE Transport Initialization ---
+MCP_SSE_PATH = "/mcp/sse"  # For SSE connection
+MCP_MESSAGES_PATH = "/mcp/messages" # For client-to-server POST messages
+sse_transport = SseServerTransport(post_messages_path=MCP_MESSAGES_PATH)
+logging.info(f"MCP Server configured to run via SSE on GET {MCP_SSE_PATH} and POST {MCP_MESSAGES_PATH}")
+
+
 # --- Helper Functions ---
-def get_websocket_url(request: Request) -> str:
-    """Determines the WebSocket URL (wss://) based on the request."""
+# Existing get_websocket_url for FastAPI context
+def get_fastapi_websocket_url(request: Request) -> str: # Renamed to avoid conflict for now
+    """Determines the WebSocket URL (wss://) for FastAPI context based on the request."""
     ngrok_url_env = os.getenv("NGROK_URL")
     # NGROK_PORT is not typically needed for the public Twilio Stream URL
     # as ngrok maps its public URL (usually on port 443 for wss) to your local port.
@@ -86,17 +107,49 @@ def get_websocket_url(request: Request) -> str:
             port_str = ""
         return f"{scheme}://{host}{port_str}/media-stream"
 
+# New get_mcp_websocket_url for MCP context (simplified)
+def get_mcp_websocket_url() -> str:
+    """
+    Determines the WebSocket URL (wss://) for MCP tool context.
+    Relies on NGROK_URL or a fallback environment variable.
+    """
+    ngrok_url_env = os.getenv("NGROK_URL")
+    if ngrok_url_env:
+        # NGROK_URL should be just the hostname, e.g., "xxxx.ngrok-free.app"
+        return f"wss://{ngrok_url_env}/media-stream"
+    
+    # Fallback if NGROK_URL is not set.
+    # This might be a configured public URL of the server running main.py
+    # or a placeholder that needs to be correctly set in production.
+    fallback_url = os.getenv("FALLBACK_WEBSOCKET_URL", "wss://YOUR_PUBLIC_SERVER_HOSTNAME/media-stream")
+    if fallback_url == "wss://YOUR_PUBLIC_SERVER_HOSTNAME/media-stream":
+        logging.warning("NGROK_URL not set and FALLBACK_WEBSOCKET_URL is using placeholder. WebSocket URL for MCP calls may be incorrect.")
+    return fallback_url
+
 
 # --- FastAPI Endpoints ---
+# Note: Duplicate @app.get("/") removed. Assuming one is sufficient.
 @app.get("/", response_class=JSONResponse)
 async def index_page():
     """Basic status endpoint."""
     return {"message": "AI Assistant Agent is running!"}
 
-@app.get("/", response_class=JSONResponse)
-async def index_page():
-    """Basic status endpoint."""
-    return {"message": "AI Assistant Agent is running!"}
+# --- MCP SSE Routes ---
+@app.get(MCP_SSE_PATH)
+async def handle_mcp_sse_get(request: Request):
+    """Handles the GET request for establishing an MCP SSE connection."""
+    # The sse_transport.connect_sse method handles the SSE handshake and streaming.
+    # It needs the Starlette/FastAPI scope, receive, send, and the mcp_server instance.
+    logging.debug(f"Incoming GET request to MCP SSE path: {MCP_SSE_PATH}")
+    return await sse_transport.connect_sse(request.scope, request.receive, request.send, mcp_server)
+
+@app.post(MCP_MESSAGES_PATH)
+async def handle_mcp_messages_post(request: Request):
+    """Handles POST requests from the client to send messages to the MCP server."""
+    # The sse_transport.handle_post_message method processes these.
+    logging.debug(f"Incoming POST request to MCP messages path: {MCP_MESSAGES_PATH}")
+    return await sse_transport.handle_post_message(request.scope, request.receive, request.send, mcp_server)
+
 
 from backend.agent.workflow_manager import WorkflowManager
 
@@ -119,10 +172,10 @@ async def handle_order(request: Request, call_details: CallInitiationRequest): #
     # --- Debugging Headers ---
     logging.info(f"Incoming Request Headers: {dict(request.headers)}")
     # --- End Debugging ---
-    logging.info(f"Received order request: Target='{call_details.target_phone_number}', Instruction='{call_details.task_instruction[:100]}...', Context Keys='{list(call_details.call_context.keys())}'")
+    logging.info(f"Received order request: Target='{call_details.target_phone_number}', Instruction='{call_details.task_instruction[:100]}...', Context Keys='{list(call_details.call_context.keys())}'") # Log context keys
 
     # --- Input Validation ---
-    # Validate instruction (from the new model field)
+    # Validate instruction (from the new model field) # Corrected comment
     if not call_details.task_instruction:
         logging.error("Validation failed: task_instruction parameter is empty.")
         raise HTTPException(status_code=400, detail="task_instruction parameter cannot be empty.")
@@ -139,9 +192,9 @@ async def handle_order(request: Request, call_details: CallInitiationRequest): #
     # --- End Input Validation ---
 
     try:
-        ws_url = get_websocket_url(request) # Get dynamic WSS URL
-        logging.info(f"Generated WebSocket URL for Twilio Stream: {ws_url}")
-        logging.info(f"VERIFY_WS_URL: Embedding WebSocket URL in TwiML: {ws_url}") # Added diagnostic log
+        ws_url = get_fastapi_websocket_url(request) # Use renamed function for FastAPI context
+        logging.info(f"Generated WebSocket URL for Twilio Stream (FastAPI): {ws_url}")
+        logging.info(f"VERIFY_WS_URL: Embedding WebSocket URL in TwiML (FastAPI): {ws_url}")
 
         # Generate TwiML for the outbound call
         response = VoiceResponse()
@@ -169,19 +222,91 @@ async def handle_order(request: Request, call_details: CallInitiationRequest): #
         logging.info("Attempting to initiate Twilio call...") # Added diagnostic log
 
         # Create the outbound call
-        call = twilio_client.calls.create(
-            to=call_details.target_phone_number, # Use target_phone_number from request body
+        # Use asyncio.to_thread for the blocking SDK call
+        call = await asyncio.to_thread(
+            twilio_client.calls.create,
+            to=call_details.target_phone_number,
             from_=TWILIO_PHONE_NUMBER,
             twiml=twiml_content
         )
         logging.info(f"Initiated call to {call_details.target_phone_number}, Call SID: {call.sid}")
         return {"status": "Call initiated", "call_sid": call.sid}
     except TwilioRestException as e:
-        logging.exception(f"Twilio API error initiating call: {e}") # Use logging.exception
+        logging.exception(f"Twilio API error initiating call: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to initiate call via Twilio: {str(e)}")
     except Exception as e:
-        logging.exception(f"Unexpected error initiating call: {e}") # Use logging.exception
+        logging.exception(f"Unexpected error initiating call: {e}")
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+
+
+# --- MCP Tool Definition ---
+@mcp_server.tool()
+async def initiate_call_mcp_tool(
+    target_phone_number: str,
+    task_instruction: str,
+    call_context: dict
+) -> dict:
+    """
+    Initiates an outbound call using Twilio to the specified phone number with given instructions and context.
+
+    Args:
+        target_phone_number: The phone number to call, in E.164 format (e.g., +15551234567).
+        task_instruction: The base instruction for the AI agent handling the call.
+        call_context: A dictionary containing additional context or details for the call.
+    """
+    logging.info(f"MCP Tool: Initiating call to {target_phone_number} with instruction: '{task_instruction[:100]}...', Context Keys='{list(call_context.keys())}'")
+
+    # Basic input validation (FastMCP also uses type hints for schema validation)
+    if not task_instruction:
+        logging.error("MCP Tool: task_instruction parameter is empty.")
+        raise ValueError("task_instruction parameter cannot be empty.")
+    
+    e164_regex = r"^\+[1-9]\d{1,14}$"
+    if not re.match(e164_regex, target_phone_number):
+        logging.error(f"MCP Tool: Invalid target_phone_number format: {target_phone_number}. Expected E.164 format.")
+        raise ValueError("Invalid target_phone_number format. Expected E.164 format (e.g., +15551234567).")
+
+    logging.info("MCP Tool: Input validation passed.")
+
+    try:
+        ws_url = get_mcp_websocket_url() # Use the new helper for MCP context
+        logging.info(f"MCP Tool: Using WebSocket URL for Twilio Stream: {ws_url}")
+
+        response = VoiceResponse()
+        connect = Connect()
+        stream_obj = Stream(url=ws_url) # Renamed from stream to avoid conflict
+        stream_obj.parameter(name="instructions", value=task_instruction)
+        
+        # Ensure context_data is a dictionary, default to empty if None or other types
+        # Though type hint says dict, robust handling is good. MCP should validate input type.
+        context_to_pass = call_context if isinstance(call_context, dict) else {}
+        context_json = json.dumps(context_to_pass)
+        stream_obj.parameter(name="context", value=context_json)
+        
+        connect.append(stream_obj)
+        response.append(connect)
+        response.say("Sorry, I couldn't connect to the AI service at this moment.") # Fallback message
+
+        twiml_content = str(response)
+        logging.info(f"MCP Tool: Generated TwiML for outbound call:\n{twiml_content}")
+
+        # Use asyncio.to_thread for the blocking Twilio client call
+        call = await asyncio.to_thread(
+            twilio_client.calls.create, # twilio_client should be globally accessible
+            to=target_phone_number,
+            from_=TWILIO_PHONE_NUMBER, # TWILIO_PHONE_NUMBER should be globally accessible
+            twiml=twiml_content
+        )
+        
+        logging.info(f"MCP Tool: Call initiated to {target_phone_number}, Call SID: {call.sid}")
+        return {"status": "Call initiated", "call_sid": call.sid}
+    except TwilioRestException as e:
+        logging.error(f"MCP Tool: Twilio API error initiating call: {e}", exc_info=True)
+        raise # Re-raise for FastMCP to convert to an MCP error
+    except Exception as e:
+        logging.error(f"MCP Tool: Unexpected error initiating call: {e}", exc_info=True)
+        raise # Re-raise for FastMCP
+
 
 @app.websocket("/media-stream")
 async def handle_media_stream(websocket: WebSocket):
